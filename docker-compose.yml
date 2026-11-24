@@ -1,0 +1,66 @@
+# Dokploy & Universal Single-Application Stack for Stash
+# In Dokploy: Deploy this Compose file as one service and attach your domain to service "gateway" on port 8080.
+# Locally:    docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
+
+services:
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose:
+      - "8080"
+    depends_on:
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Empty string routes browser requests cleanly to same-origin /api/v1/* through gateway
+        NEXT_PUBLIC_API_URL: ""
+    restart: unless-stopped
+    expose:
+      - "3000"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose:
+      - "4000"
+    depends_on:
+      - pot-provider
+    environment:
+      STASH_PORT: "4000"
+      STASH_TRUST_PROXY: "true"
+      STASH_TEMP_DIR: "/tmp/stash-jobs"
+      STASH_MAX_CONCURRENT_JOBS: "${STASH_MAX_CONCURRENT_JOBS:-4}"
+      STASH_MAX_CONCURRENT_TRACKS: "${STASH_MAX_CONCURRENT_TRACKS:-4}"
+      STASH_FRAGMENTS_SINGLE: "${STASH_FRAGMENTS_SINGLE:-8}"
+      STASH_FRAGMENTS_PLAYLIST: "${STASH_FRAGMENTS_PLAYLIST:-4}"
+      STASH_JOB_TTL_MINUTES: "${STASH_JOB_TTL_MINUTES:-30}"
+      STASH_POT_PROVIDER_URL: "http://pot-provider:4416"
+      STASH_ALLOWED_ORIGINS: "${STASH_ALLOWED_ORIGINS:-http://localhost:8080,http://localhost:3000}"
+      # Optional: configure if your VPS datacenter IP requires authenticated cookies or a proxy
+      STASH_COOKIES_FILE: "${STASH_COOKIES_FILE:-}"
+      STASH_PROXY_URL: "${STASH_PROXY_URL:-}"
+    volumes:
+      - stash_temp:/tmp/stash-jobs
+      # Optional read-only mount for YouTube cookies in Dokploy (create file in Dokploy Mounts tab):
+      # - ./cookies.txt:/data/cookies.txt:ro
+
+  pot-provider:
+    image: docker.io/brainicism/bgutil-ytdlp-pot-provider:latest
+    init: true
+    restart: unless-stopped
+    expose:
+      - "4416"
+
+volumes:
+  stash_temp:

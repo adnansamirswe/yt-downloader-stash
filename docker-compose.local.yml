@@ -1,0 +1,7 @@
+# Local port binding overlay for running Stash via Docker/Podman outside Dokploy:
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
+
+services:
+  gateway:
+    ports:
+      - "127.0.0.1:8080:8080"

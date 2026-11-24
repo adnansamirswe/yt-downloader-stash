@@ -1,0 +1,24 @@
+# Secrets & local environment overrides (keep .env.example templates)
+.env
+.env.*
+!.env.example
+cookies.txt
+*.cookies.txt
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+npm-debug.log*
+
+# Go build outputs & temporary download workspaces
+backend/stash-api
+backend/tmp/
+backend/dist/
+*.exe
+*.test
+
+# OS / Editor artifacts
+.DS_Store
+Thumbs.db
