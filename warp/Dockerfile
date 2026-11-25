@@ -23,7 +23,7 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 USER warp
 WORKDIR /config
 
-EXPOSE 1080
+EXPOSE 1080 8118
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=5 \
     CMD curl -fsS -x socks5h://127.0.0.1:1080 --max-time 8 https://www.cloudflare.com/cdn-cgi/trace | grep -q "warp=on" || exit 1

@@ -13,15 +13,16 @@ if [ ! -f /config/wgcf-profile.conf ]; then
   wgcf generate
 fi
 
-# Strip IPv6 interface address and AllowedIPs if running in IPv4-only Docker bridge
-if [ ! -f /config/wireproxy.conf ]; then
-  cat > /config/wireproxy.conf <<'EOF'
+# Always write wireproxy.conf so both SOCKS5 (:1080) and HTTP (:8118) listeners stay up to date
+cat > /config/wireproxy.conf <<'EOF'
 WGConfig = /config/wgcf-profile.conf
 
 [Socks5]
 BindAddress = 0.0.0.0:1080
-EOF
-fi
 
-echo "[warp] Starting userspace wireproxy SOCKS5 on :1080..."
+[http]
+BindAddress = 0.0.0.0:8118
+EOF
+
+echo "[warp] Starting userspace wireproxy (SOCKS5 :1080, HTTP :8118)..."
 exec wireproxy -c /config/wireproxy.conf
