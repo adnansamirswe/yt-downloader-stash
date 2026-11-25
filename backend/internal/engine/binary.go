@@ -98,6 +98,7 @@ func (t *Tooling) PrepareYtDlpArgs() (args []string, cleanup func()) {
 	}
 	if t.PotURL != "" {
 		args = append(args,
+			"-4",
 			"--extractor-args", "youtubepot-bgutilhttp:base_url="+t.PotURL,
 			"--extractor-args", "youtube:player-client=default,mweb",
 		)

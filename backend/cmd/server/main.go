@@ -45,7 +45,8 @@ func main() {
 			logger.Error("cookies_b64_decode_failed", "error", err)
 		} else {
 			cookiePath := filepath.Join(os.TempDir(), "stash-cookies-master.txt")
-			if err := os.WriteFile(cookiePath, decoded, 0o600); err != nil {
+			_ = os.Remove(cookiePath)
+			if err := os.WriteFile(cookiePath, decoded, 0o400); err != nil {
 				cookiesStatus = "write_error"
 				logger.Error("cookies_write_failed", "error", err)
 			} else {
