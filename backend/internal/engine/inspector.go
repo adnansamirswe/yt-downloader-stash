@@ -215,15 +215,23 @@ type rawYtDlpPlaylistEntry struct {
 }
 
 func (ins *Inspector) inspectPlaylist(ctx context.Context, validated *security.ValidatedURL) (*model.InspectResponse, error) {
-	inspectCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	inspectCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
 	baseArgs, cleanup := ins.tooling.PrepareYtDlpArgs()
 	defer cleanup()
 
+	// YouTube Radio/Mix (RD...) playlists paginate indefinitely; cap at 50 entries for fast loads.
+	// Regular playlists are capped at 250 entries to prevent multi-minute inspection timeouts.
+	playlistLimit := "250"
+	if strings.HasPrefix(validated.PlaylistID, "RD") {
+		playlistLimit = "50"
+	}
+
 	args := append(baseArgs,
 		"--flat-playlist",
 		"--yes-playlist",
+		"--playlist-end", playlistLimit,
 		"--dump-single-json",
 		"--skip-download",
 		"--",
@@ -236,8 +244,12 @@ func (ins *Inspector) inspectPlaylist(ctx context.Context, validated *security.V
 			"playlist_id", validated.PlaylistID,
 			"cookies_configured", ins.tooling.HasCookies(),
 			"cookies_status", ins.tooling.CookiesStatus,
+			"timed_out", errors.Is(inspectCtx.Err(), context.DeadlineExceeded),
 			"stderr", truncateString(stderr, 600),
 		)
+		if errors.Is(inspectCtx.Err(), context.DeadlineExceeded) {
+			return nil, errors.New("timed out fetching playlist from YouTube; try again in a moment")
+		}
 		return nil, errors.New(classifyYtDlpError(stderr))
 	}
 
