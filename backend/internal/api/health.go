@@ -26,6 +26,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		JSRuntime:           s.tooling.JSRuntimeName,
 		PotProviderEnabled:  potEnabled,
 		PotProviderHealthy:  potHealthy,
+		ProxyEnabled:        s.tooling.ProxyURL != "" && s.tooling.ProxyURL != "direct" && s.tooling.ProxyURL != "none",
 		CookiesConfigured:   s.tooling.HasCookies(),
 		CookiesStatus:       s.tooling.CookiesStatus,
 		MaxConcurrentTracks: s.cfg.MaxConcurrentTracks,

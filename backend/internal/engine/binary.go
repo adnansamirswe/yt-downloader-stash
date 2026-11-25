@@ -119,7 +119,7 @@ func (t *Tooling) PrepareYtDlpArgs() (args []string, cleanup func()) {
 			}
 		}
 	}
-	if t.ProxyURL != "" {
+	if t.ProxyURL != "" && !strings.EqualFold(t.ProxyURL, "direct") && !strings.EqualFold(t.ProxyURL, "none") {
 		args = append(args, "--proxy", t.ProxyURL)
 	}
 

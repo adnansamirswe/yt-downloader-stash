@@ -38,6 +38,7 @@ export const HealthResponseSchema = z.object({
   jsRuntime: z.string(),
   potProviderEnabled: z.boolean(),
   potProviderHealthy: z.boolean(),
+  proxyEnabled: z.boolean().optional(),
   cookiesConfigured: z.boolean().optional(),
   cookiesStatus: z.string().optional(),
   maxConcurrentTracks: z.number(),
