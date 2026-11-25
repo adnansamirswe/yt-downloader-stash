@@ -10,8 +10,10 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
+	"unicode"
 
 	"stash-backend/internal/api"
 	"stash-backend/internal/config"
@@ -26,7 +28,13 @@ func main() {
 	cfg := config.Load()
 
 	if cfg.CookiesFile == "" && cfg.CookiesB64 != "" {
-		decoded, err := base64.StdEncoding.DecodeString(cfg.CookiesB64)
+		cleanB64 := strings.Map(func(r rune) rune {
+			if unicode.IsSpace(r) {
+				return -1
+			}
+			return r
+		}, cfg.CookiesB64)
+		decoded, err := base64.StdEncoding.DecodeString(cleanB64)
 		if err != nil {
 			logger.Error("cookies_b64_decode_failed", "error", err)
 		} else {
@@ -48,6 +56,7 @@ func main() {
 		"ffmpeg_available", tooling.FFmpegPath != "",
 		"js_runtime", tooling.JSRuntimeName,
 		"pot_provider_enabled", tooling.PotURL != "",
+		"cookies_configured", tooling.CookiesFile != "",
 	)
 
 	inspector := engine.NewInspector(tooling, cfg.CacheTTL, logger)

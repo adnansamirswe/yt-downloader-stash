@@ -77,7 +77,10 @@ func (t *Tooling) BaseYtDlpArgs() []string {
 		args = append(args, "--ffmpeg-location", filepath.Dir(t.FFmpegPath))
 	}
 	if t.PotURL != "" {
-		args = append(args, "--extractor-args", "youtubepot-bgutilhttp:base_url="+t.PotURL)
+		args = append(args,
+			"--extractor-args", "youtubepot-bgutilhttp:base_url="+t.PotURL,
+			"--extractor-args", "youtube:player-client=mweb,web_safari,tv",
+		)
 	}
 	if t.CookiesFile != "" {
 		if st, err := os.Stat(t.CookiesFile); err == nil && !st.IsDir() {
