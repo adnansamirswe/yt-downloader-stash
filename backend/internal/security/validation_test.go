@@ -46,6 +46,13 @@ func TestValidateYouTubeURL(t *testing.T) {
 			wantVid:  "dQw4w9WgXcQ",
 			wantList: "PLMC9KNkIncKtPzgY-5rmhvj7fax8fdxoj",
 		},
+		{
+			name:     "youtube mix RD playlist derives seed watch url",
+			url:      "https://youtube.com/playlist?list=RDCVtHZ5zhxIk&playnext=1&si=EzYfkbUhoYiNQcx6",
+			wantKind: "playlist",
+			wantVid:  "",
+			wantList: "RDCVtHZ5zhxIk",
+		},
 	}
 
 	for _, tc := range validCases {
@@ -57,6 +64,9 @@ func TestValidateYouTubeURL(t *testing.T) {
 			if got.Kind != tc.wantKind || got.VideoID != tc.wantVid || got.PlaylistID != tc.wantList {
 				t.Fatalf("got (%s, %s, %s), want (%s, %s, %s)",
 					got.Kind, got.VideoID, got.PlaylistID, tc.wantKind, tc.wantVid, tc.wantList)
+			}
+			if tc.wantList == "RDCVtHZ5zhxIk" && got.PlaylistURL != "https://www.youtube.com/watch?v=CVtHZ5zhxIk&list=RDCVtHZ5zhxIk" {
+				t.Fatalf("expected seed watch URL for RD mix, got %q", got.PlaylistURL)
 			}
 		})
 	}

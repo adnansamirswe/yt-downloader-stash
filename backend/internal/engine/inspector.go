@@ -212,6 +212,7 @@ func (ins *Inspector) inspectPlaylist(ctx context.Context, validated *security.V
 
 	args := append(ins.tooling.BaseYtDlpArgs(),
 		"--flat-playlist",
+		"--yes-playlist",
 		"--dump-single-json",
 		"--skip-download",
 		"--",
@@ -634,6 +635,8 @@ func classifyYtDlpError(stderr string) string {
 		return "This video is unavailable or has been removed."
 	case strings.Contains(lc, "this live event"), strings.Contains(lc, "premieres in"):
 		return "Upcoming premieres and active livestreams cannot be downloaded yet."
+	case strings.Contains(lc, "this playlist type is unviewable"):
+		return "This YouTube Mix/Radio playlist requires a seed video URL (youtube.com/watch?v=...&list=...) to inspect."
 	case strings.Contains(lc, "http error 429"), strings.Contains(lc, "too many requests"):
 		return "YouTube temporarily rate-limited requests from this server. Try again shortly."
 	case strings.Contains(lc, "http error 403"):

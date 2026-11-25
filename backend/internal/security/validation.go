@@ -128,7 +128,21 @@ func ValidateYouTubeURL(raw string) (*ValidatedURL, error) {
 		res.VideoURL = "https://www.youtube.com/watch?v=" + videoID
 	}
 	if playlistID != "" {
-		res.PlaylistURL = "https://www.youtube.com/playlist?list=" + playlistID
+		// YouTube Mix/Radio playlists (RD...) cannot be fetched via /playlist?list=RD... directly;
+		// they require a watch?v=<seed>&list=RD... URL.
+		if strings.HasPrefix(playlistID, "RD") {
+			seedVideoID := videoID
+			if seedVideoID == "" && len(playlistID) == 13 && ValidateVideoID(playlistID[2:]) {
+				seedVideoID = playlistID[2:]
+			}
+			if seedVideoID != "" {
+				res.PlaylistURL = "https://www.youtube.com/watch?v=" + seedVideoID + "&list=" + playlistID
+			} else {
+				res.PlaylistURL = "https://www.youtube.com/playlist?list=" + playlistID
+			}
+		} else {
+			res.PlaylistURL = "https://www.youtube.com/playlist?list=" + playlistID
+		}
 	}
 
 	switch {
