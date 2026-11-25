@@ -139,7 +139,8 @@ Open `http://localhost:3000`.
 | `STASH_JS_RUNTIME` | auto-detected | Override `yt-dlp --js-runtimes` value (`deno` preferred, falls back to `node`) |
 | `STASH_POT_PROVIDER_URL` | unset | URL of `bgutil-ytdlp-pot-provider` (set to `http://pot-provider:4416` in Compose) |
 | `STASH_COOKIES_FILE` | unset | Path to read-only Netscape `cookies.txt` |
-| `STASH_PROXY_URL` | unset | Optional HTTP/SOCKS proxy passed to `yt-dlp` |
+| `STASH_COOKIES_B64` | unset | Base64-encoded Netscape `cookies.txt` (ideal for Dokploy Environment tab; copied per invocation) |
+| `STASH_PROXY_URL` | unset (`socks5h://warp:1080` in Compose) | HTTP/SOCKS5 proxy passed to `yt-dlp`; set to `direct` to bypass the built-in Cloudflare WARP sidecar |
 
 ### Frontend (`frontend/.env.example`)
 
