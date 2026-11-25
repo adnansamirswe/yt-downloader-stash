@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,6 +32,10 @@ type Tooling struct {
 	potMu        sync.Mutex
 	potLastCheck time.Time
 	potHealthy   bool
+
+	proxyMu        sync.Mutex
+	proxyLastCheck time.Time
+	proxyHealthy   bool
 }
 
 // DetectTooling resolves yt-dlp, ffmpeg, and JS runtime binaries once at startup.
@@ -88,6 +93,7 @@ func (t *Tooling) PrepareYtDlpArgs() (args []string, cleanup func()) {
 		"--ignore-config",
 		"--no-warnings",
 		"--no-color",
+		"--socket-timeout", "15",
 	}
 
 	if t.JSRuntimeArg != "" {
@@ -119,11 +125,67 @@ func (t *Tooling) PrepareYtDlpArgs() (args []string, cleanup func()) {
 			}
 		}
 	}
-	if t.ProxyURL != "" && !strings.EqualFold(t.ProxyURL, "direct") && !strings.EqualFold(t.ProxyURL, "none") {
-		args = append(args, "--proxy", t.ProxyURL)
+	if t.ProxyEnabled() {
+		// Only attach the built-in warp sidecar if it can actually tunnel traffic; prevents 60s hangs if UDP 2408 is blocked.
+		useProxy := true
+		if isBuiltInWarpProxy(t.ProxyURL) && !t.CheckProxy(context.Background()) {
+			useProxy = false
+		}
+		if useProxy {
+			args = append(args, "--proxy", t.ProxyURL)
+		}
 	}
 
 	return args, cleanup
+}
+
+// ProxyEnabled reports whether an outbound proxy URL is configured.
+func (t *Tooling) ProxyEnabled() bool {
+	return t.ProxyURL != "" && !strings.EqualFold(t.ProxyURL, "direct") && !strings.EqualFold(t.ProxyURL, "none")
+}
+
+// CheckProxy probes whether the configured proxy can actually reach Cloudflare (cached 30s).
+func (t *Tooling) CheckProxy(ctx context.Context) bool {
+	if !t.ProxyEnabled() {
+		return false
+	}
+
+	t.proxyMu.Lock()
+	if time.Since(t.proxyLastCheck) < 30*time.Second {
+		healthy := t.proxyHealthy
+		t.proxyMu.Unlock()
+		return healthy
+	}
+	t.proxyMu.Unlock()
+
+	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	// Use curl (bundled in runtime image) because stdlib net/http lacks native socks5h:// transport without x/net.
+	healthy := false
+	if curlBin, err := exec.LookPath("curl"); err == nil {
+		cmd := NewGroupCommand(probeCtx, curlBin, "-fsS", "-x", t.ProxyURL, "--max-time", "4", "https://www.cloudflare.com/cdn-cgi/trace")
+		var out bytes.Buffer
+		cmd.Stdout = &out
+		cmd.Stderr = &bytes.Buffer{}
+		if err := cmd.Run(); err == nil && bytes.Contains(out.Bytes(), []byte("ip=")) {
+			healthy = true
+		}
+	}
+
+	t.proxyMu.Lock()
+	t.proxyHealthy = healthy
+	t.proxyLastCheck = time.Now()
+	t.proxyMu.Unlock()
+	return healthy
+}
+
+func isBuiltInWarpProxy(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(u.Hostname(), "warp")
 }
 
 // CheckPotProvider verifies whether the configured PO-token sidecar responds over HTTP (cached for 15s).

@@ -111,6 +111,7 @@ type HealthResponse struct {
 	PotProviderEnabled  bool   `json:"potProviderEnabled"`
 	PotProviderHealthy  bool   `json:"potProviderHealthy"`
 	ProxyEnabled        bool   `json:"proxyEnabled"`
+	ProxyHealthy        bool   `json:"proxyHealthy"`
 	CookiesConfigured   bool   `json:"cookiesConfigured"`
 	CookiesStatus       string `json:"cookiesStatus"`
 	MaxConcurrentTracks int    `json:"maxConcurrentTracks"`

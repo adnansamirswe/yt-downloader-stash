@@ -13,6 +13,12 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		potHealthy = s.tooling.CheckPotProvider(r.Context())
 	}
 
+	proxyEnabled := s.tooling.ProxyEnabled()
+	proxyHealthy := false
+	if proxyEnabled {
+		proxyHealthy = s.tooling.CheckProxy(r.Context())
+	}
+
 	status := "ok"
 	if s.tooling.YtDlpPath == "" || s.tooling.FFmpegPath == "" {
 		status = "degraded"
@@ -26,7 +32,8 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		JSRuntime:           s.tooling.JSRuntimeName,
 		PotProviderEnabled:  potEnabled,
 		PotProviderHealthy:  potHealthy,
-		ProxyEnabled:        s.tooling.ProxyURL != "" && s.tooling.ProxyURL != "direct" && s.tooling.ProxyURL != "none",
+		ProxyEnabled:        proxyEnabled,
+		ProxyHealthy:        proxyHealthy,
 		CookiesConfigured:   s.tooling.HasCookies(),
 		CookiesStatus:       s.tooling.CookiesStatus,
 		MaxConcurrentTracks: s.cfg.MaxConcurrentTracks,
