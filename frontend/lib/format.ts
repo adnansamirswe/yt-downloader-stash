@@ -73,3 +73,33 @@ export function formatUploadDate(yyyymmdd?: string): string {
     timeZone: "UTC",
   }).format(date);
 }
+
+export function buildFormatKey(params: {
+  videoId: string;
+  mediaType: string;
+  container: string;
+  quality?: string;
+  audioBitrate?: string;
+}): string {
+  const mt = params.mediaType.toLowerCase();
+  const c = params.container.toLowerCase();
+  const q = mt === "video" ? (params.quality ?? "").toLowerCase() : "";
+  const br = mt === "audio" && c === "mp3" ? (params.audioBitrate ?? "320k").toLowerCase() : "";
+  return `${params.videoId}|${mt}|${c}|${q}|${br}`;
+}
+
+export function formatJobBadge(params: {
+  mediaType: string;
+  container: string;
+  quality?: string;
+  audioBitrate?: string;
+}): string {
+  const c = params.container.toUpperCase();
+  if (params.mediaType === "video") {
+    return params.quality ? `${params.quality.toUpperCase()} ${c}` : c;
+  }
+  if (params.container.toLowerCase() === "mp3" && params.audioBitrate) {
+    return `${c} ${params.audioBitrate.toUpperCase()}`;
+  }
+  return c;
+}

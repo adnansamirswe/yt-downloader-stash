@@ -259,7 +259,13 @@ func resolveBinary(override, name string, preferUserLocal bool) string {
 
 func resolveJSRuntime(override string) (name string, arg string) {
 	if override != "" {
-		return override, override
+		displayName := override
+		if before, _, ok := strings.Cut(override, ":"); ok && before != "" {
+			displayName = before
+		} else {
+			displayName = filepath.Base(override)
+		}
+		return displayName, override
 	}
 	if denoPath, err := exec.LookPath("deno"); err == nil {
 		return "deno", "deno:" + denoPath

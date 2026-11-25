@@ -20,7 +20,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { TelemetryRuler } from "@/components/telemetry-ruler";
-import { formatBytes, formatSpeed } from "@/lib/format";
+import { formatBytes, formatJobBadge, formatSpeed } from "@/lib/format";
 import { getJobDownloadUrl, triggerBrowserDownload } from "@/lib/api";
 import type { JobSnapshot } from "@/lib/schemas";
 
@@ -108,8 +108,8 @@ export function TransfersDrawer({
                             }
                           >
                             {job.kind === "playlist"
-                              ? `ZIP · ${job.completedTracks}/${job.totalTracks}`
-                              : job.container.toUpperCase()}
+                              ? `ZIP · ${job.completedTracks}/${job.totalTracks} · ${formatJobBadge(job)}`
+                              : formatJobBadge(job)}
                           </Badge>
                           <span className="font-mono-tabular text-[11px] uppercase text-ink-muted">
                             {job.status}

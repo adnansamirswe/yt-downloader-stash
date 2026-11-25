@@ -25,7 +25,7 @@ import {
   type StartPlaylistJobInput,
   type StartSingleJobInput,
 } from "@/lib/api";
-import { formatSpeed } from "@/lib/format";
+import { buildFormatKey, formatJobBadge, formatSpeed } from "@/lib/format";
 import type {
   HealthResponse,
   InspectResponse,
@@ -205,7 +205,9 @@ export function StashWorkspace() {
         const snap = await startSingleJob(payload);
         registerAndTrackJob(snap, bindToStage);
         if (!bindToStage) {
-          toast.info(`Queued "${payload.title ?? "track"}" in Transfers`);
+          toast.info(
+            `Downloading "${payload.title ?? "track"}" (${formatJobBadge(payload)})`
+          );
         }
       } catch (err) {
         const msg =
@@ -301,18 +303,41 @@ export function StashWorkspace() {
 
   const stageJob = stageJobId ? (jobsById[stageJobId] ?? null) : null;
 
-  const singleJobsByVideoId = useMemo(() => {
+  const singleJobsByFormatKey = useMemo(() => {
     const map: Record<string, JobSnapshot> = {};
     for (const job of orderedJobs) {
-      if (job.kind === "single" && job.tracks[0]?.videoId) {
-        const vid = job.tracks[0].videoId;
-        if (!map[vid]) {
-          map[vid] = job;
+      if (
+        job.kind === "single" &&
+        job.status !== "cancelled" &&
+        job.tracks[0]?.videoId
+      ) {
+        const key = buildFormatKey({
+          videoId: job.tracks[0].videoId,
+          mediaType: job.mediaType,
+          container: job.container,
+          quality: job.quality,
+          audioBitrate: job.audioBitrate,
+        });
+        if (!map[key]) {
+          map[key] = job;
         }
       }
     }
     return map;
   }, [orderedJobs]);
+
+  const runningVideoJob = useMemo(() => {
+    const videoId = inspectData?.video?.videoId;
+    if (!videoId) return null;
+    return (
+      orderedJobs.find(
+        (job) =>
+          job.kind === "single" &&
+          (job.status === "queued" || job.status === "running") &&
+          job.tracks[0]?.videoId === videoId
+      ) ?? null
+    );
+  }, [orderedJobs, inspectData]);
 
   const intakeTelemetry = useMemo(() => {
     const running = activeTransfers[0];
@@ -362,6 +387,7 @@ export function StashWorkspace() {
           onUrlChange={setUrlInput}
           defaultMediaType={defaultMediaType}
           onDefaultMediaTypeChange={setDefaultMediaType}
+          showModeSwitch={!inspectData}
           isInspecting={isInspecting}
           onInspect={(override) => void handleInspect(override, "auto")}
           onClear={handleResetWorkspace}
@@ -404,8 +430,10 @@ export function StashWorkspace() {
           <SingleMediaDeck
             key={inspectData.video.videoId}
             inspect={inspectData}
-            initialMediaType={defaultMediaType}
-            activeJob={stageJob}
+            mediaType={defaultMediaType}
+            onMediaTypeChange={setDefaultMediaType}
+            singleJobsByFormatKey={singleJobsByFormatKey}
+            runningVideoJob={runningVideoJob}
             isSubmitting={isStartingJob}
             onStartDownload={(payload) => void handleStartSingle(payload, true)}
             onCancelJob={(id) => void handleCancelJob(id)}
@@ -422,10 +450,11 @@ export function StashWorkspace() {
             <PlaylistSheet
               key={inspectData.playlist.playlistId}
               inspect={inspectData}
-              initialMediaType={defaultMediaType}
+              mediaType={defaultMediaType}
+              onMediaTypeChange={setDefaultMediaType}
               maxConcurrency={health?.maxConcurrentTracks ?? 4}
               activeJob={stageJob}
-              singleJobsByVideoId={singleJobsByVideoId}
+              singleJobsByFormatKey={singleJobsByFormatKey}
               isSubmitting={isStartingJob}
               onStartPlaylistJob={(payload) => void handleStartPlaylist(payload)}
               onStartSingleTrack={(payload) =>

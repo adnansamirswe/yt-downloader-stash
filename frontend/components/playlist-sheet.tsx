@@ -30,8 +30,10 @@ import {
 import { ModeSwitch } from "@/components/mode-switch";
 import { TelemetryRuler } from "@/components/telemetry-ruler";
 import {
+  buildFormatKey,
   formatBytes,
   formatDuration,
+  formatJobBadge,
   formatSpeed,
   formatTotalDuration,
 } from "@/lib/format";
@@ -54,16 +56,20 @@ import type {
 
 interface PlaylistSheetProps {
   inspect: InspectResponse;
-  initialMediaType: MediaType;
+  mediaType: MediaType;
+  onMediaTypeChange: (mode: MediaType) => void;
   maxConcurrency: number;
   activeJob: JobSnapshot | null;
-  singleJobsByVideoId: Record<string, JobSnapshot>;
+  singleJobsByFormatKey: Record<string, JobSnapshot>;
   isSubmitting: boolean;
   onStartPlaylistJob: (payload: StartPlaylistJobInput) => void;
   onStartSingleTrack: (payload: StartSingleJobInput) => Promise<void> | void;
   onCancelJob: (jobId: string) => void;
   onRetryTrack: (jobId: string, videoId: string) => void;
 }
+
+const MAX_BATCH_TRACKS = 200;
+const AUTO_SELECT_THRESHOLD = 5;
 
 const VIDEO_QUALITY_OPTIONS = [
   { value: "best", label: "Best Available" },
@@ -91,10 +97,11 @@ const AUDIO_FORMAT_OPTIONS: Array<{
 
 export function PlaylistSheet({
   inspect,
-  initialMediaType,
+  mediaType,
+  onMediaTypeChange,
   maxConcurrency,
   activeJob,
-  singleJobsByVideoId,
+  singleJobsByFormatKey,
   isSubmitting,
   onStartPlaylistJob,
   onStartSingleTrack,
@@ -107,15 +114,19 @@ export function PlaylistSheet({
     [playlist]
   );
 
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(
-    () => new Set(availableIds)
+  // Small playlists (<= 5 tracks) start pre-selected; larger catalogs start clean so users can pick a few tracks without clearing all first.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() =>
+    availableIds.length <= AUTO_SELECT_THRESHOLD
+      ? new Set(availableIds)
+      : new Set()
   );
   const [filterQuery, setFilterQuery] = useState("");
-  const [mediaType, setMediaType] = useState<MediaType>(initialMediaType);
   const [videoQuality, setVideoQuality] = useState("1080p");
   const [videoContainer, setVideoContainer] = useState<VideoContainer>("mp4");
   const [audioPresetKey, setAudioPresetKey] = useState("mp3-320k");
-  const [pendingSingleIds, setPendingSingleIds] = useState<Set<string>>(() => new Set());
+  const [pendingSingleKeys, setPendingSingleKeys] = useState<Set<string>>(
+    () => new Set()
+  );
   const [concurrency, setConcurrency] = useState(() =>
     Math.min(Math.max(1, maxConcurrency), 4)
   );
@@ -170,6 +181,40 @@ export function PlaylistSheet({
     activeJob?.status === "queued" || activeJob?.status === "running";
   const canDownloadZip = (activeJob?.completedTracks ?? 0) > 0;
   const allFilteredAvailable = filteredEntries.filter((e) => e.available);
+  const exceedsBatchLimit = selectedEntries.length > MAX_BATCH_TRACKS;
+
+  const selectedAudioFormat =
+    AUDIO_FORMAT_OPTIONS.find((a) => a.value === audioPresetKey) ??
+    AUDIO_FORMAT_OPTIONS[0];
+  const currentContainer =
+    mediaType === "video" ? videoContainer : selectedAudioFormat.container;
+  const currentQuality = mediaType === "video" ? videoQuality : undefined;
+  const currentAudioBitrate =
+    mediaType === "audio" ? selectedAudioFormat.bitrate : undefined;
+  const currentFormatLabel = formatJobBadge({
+    mediaType,
+    container: currentContainer,
+    quality: currentQuality,
+    audioBitrate: currentAudioBitrate,
+  });
+
+  const activeJobMatchesFormat = Boolean(
+    activeJob &&
+      buildFormatKey({
+        videoId: "_",
+        mediaType: activeJob.mediaType,
+        container: activeJob.container,
+        quality: activeJob.quality,
+        audioBitrate: activeJob.audioBitrate,
+      }) ===
+        buildFormatKey({
+          videoId: "_",
+          mediaType,
+          container: currentContainer,
+          quality: currentQuality,
+          audioBitrate: currentAudioBitrate,
+        })
+  );
 
   function toggleRowSelection(entry: PlaylistEntry, filteredIdx: number, shiftKey: boolean) {
     if (!entry.available) return;
@@ -221,23 +266,9 @@ export function PlaylistSheet({
     });
   }
 
-  function resolveSelectedAudioFormat(): {
-    container: string;
-    audioBitrate?: AudioBitrate;
-  } {
-    const found =
-      AUDIO_FORMAT_OPTIONS.find((a) => a.value === audioPresetKey) ??
-      AUDIO_FORMAT_OPTIONS[0];
-    return {
-      container: found.container,
-      audioBitrate: found.bitrate,
-    };
-  }
-
   function handleDispatchBatch() {
-    if (!playlist || selectedEntries.length === 0) return;
+    if (!playlist || selectedEntries.length === 0 || exceedsBatchLimit) return;
 
-    const audioFmt = resolveSelectedAudioFormat();
     onStartPlaylistJob({
       playlistUrl: inspect.sourceUrl,
       playlistTitle: playlist.title,
@@ -247,19 +278,25 @@ export function PlaylistSheet({
         index: e.index,
       })),
       mediaType,
-      quality: mediaType === "video" ? videoQuality : undefined,
-      container: mediaType === "video" ? videoContainer : audioFmt.container,
-      audioBitrate: mediaType === "audio" ? audioFmt.audioBitrate : undefined,
+      quality: currentQuality,
+      container: currentContainer,
+      audioBitrate: currentAudioBitrate,
       concurrency,
       embedMetadata,
     });
   }
 
   async function handleSingleQuickStash(entry: PlaylistEntry) {
-    const audioFmt = resolveSelectedAudioFormat();
-    setPendingSingleIds((prev) => {
+    const formatKey = buildFormatKey({
+      videoId: entry.videoId,
+      mediaType,
+      container: currentContainer,
+      quality: currentQuality,
+      audioBitrate: currentAudioBitrate,
+    });
+    setPendingSingleKeys((prev) => {
       const next = new Set(prev);
-      next.add(entry.videoId);
+      next.add(formatKey);
       return next;
     });
     try {
@@ -267,15 +304,15 @@ export function PlaylistSheet({
         url: `https://www.youtube.com/watch?v=${entry.videoId}`,
         title: entry.title,
         mediaType,
-        quality: mediaType === "video" ? videoQuality : undefined,
-        container: mediaType === "video" ? videoContainer : audioFmt.container,
-        audioBitrate: mediaType === "audio" ? audioFmt.audioBitrate : undefined,
+        quality: currentQuality,
+        container: currentContainer,
+        audioBitrate: currentAudioBitrate,
         embedMetadata,
       });
     } finally {
-      setPendingSingleIds((prev) => {
+      setPendingSingleKeys((prev) => {
         const next = new Set(prev);
-        next.delete(entry.videoId);
+        next.delete(formatKey);
         return next;
       });
     }
@@ -359,12 +396,12 @@ export function PlaylistSheet({
                   }
                   leftLabel={
                     activeJob.status === "completed"
-                      ? `ARCHIVE READY · ${activeJob.completedTracks} OF ${activeJob.totalTracks} TRACKS`
+                      ? `ARCHIVE READY · ${formatJobBadge(activeJob)} · ${activeJob.completedTracks} OF ${activeJob.totalTracks} TRACKS`
                       : activeJob.status === "partial"
-                        ? `PARTIAL ARCHIVE · ${activeJob.completedTracks} READY · ${activeJob.failedTracks} FAILED`
+                        ? `PARTIAL ARCHIVE · ${formatJobBadge(activeJob)} · ${activeJob.completedTracks} READY · ${activeJob.failedTracks} FAILED`
                         : activeJob.status === "cancelled"
                           ? "BATCH CANCELLED"
-                          : `PARALLEL BATCH · ${activeJob.completedTracks}/${activeJob.totalTracks} DONE · ${formatSpeed(activeJob.aggregateSpeedBytes)}`
+                          : `PARALLEL BATCH · ${formatJobBadge(activeJob)} · ${activeJob.completedTracks}/${activeJob.totalTracks} DONE · ${formatSpeed(activeJob.aggregateSpeedBytes)}`
                   }
                   rightLabel={`${activeJob.overallPercent.toFixed(0)}%`}
                 />
@@ -450,6 +487,12 @@ export function PlaylistSheet({
               {selectedDurationSeconds > 0
                 ? ` · ${formatTotalDuration(selectedDurationSeconds)}`
                 : ""}
+              {exceedsBatchLimit && (
+                <span className="text-status-error">
+                  {" "}
+                  · max {MAX_BATCH_TRACKS} per .zip
+                </span>
+              )}
             </span>
           </div>
         </div>
@@ -459,7 +502,7 @@ export function PlaylistSheet({
           <div className="flex flex-wrap items-center gap-2">
             <ModeSwitch
               value={mediaType}
-              onChange={setMediaType}
+              onChange={onMediaTypeChange}
               layoutGroupId="playlist-mode-switch"
               size="sm"
             />
@@ -561,7 +604,12 @@ export function PlaylistSheet({
           <Button
             variant="signal"
             size="default"
-            disabled={isSubmitting || isRunning || selectedEntries.length === 0}
+            disabled={
+              isSubmitting ||
+              isRunning ||
+              selectedEntries.length === 0 ||
+              exceedsBatchLimit
+            }
             onClick={handleDispatchBatch}
             className="w-full sm:w-auto"
           >
@@ -573,12 +621,23 @@ export function PlaylistSheet({
                   {activeJob?.totalTracks ?? selectedEntries.length}
                 </span>
               </>
+            ) : exceedsBatchLimit ? (
+              <>
+                <Archive className="size-4 stroke-[1.6]" />
+                <span>Max {MAX_BATCH_TRACKS} tracks per .zip</span>
+              </>
+            ) : selectedEntries.length === 0 ? (
+              <>
+                <Archive className="size-4 stroke-[1.6]" />
+                <span>Select tracks for .zip</span>
+              </>
             ) : (
               <>
                 <Archive className="size-4 stroke-[1.6]" />
                 <span>
                   Stash {selectedEntries.length}{" "}
-                  {selectedEntries.length === 1 ? "Track" : "Tracks"} (.zip)
+                  {selectedEntries.length === 1 ? "Track" : "Tracks"} (
+                  {currentFormatLabel} .zip)
                 </span>
               </>
             )}
@@ -620,12 +679,27 @@ export function PlaylistSheet({
               if (!entry) return null;
 
               const isSelected = selectedIds.has(entry.videoId);
-              const batchTrack = trackStateById.get(entry.videoId);
-              const singleJob = singleJobsByVideoId[entry.videoId];
+              const rowFormatKey = buildFormatKey({
+                videoId: entry.videoId,
+                mediaType,
+                container: currentContainer,
+                quality: currentQuality,
+                audioBitrate: currentAudioBitrate,
+              });
+              const batchTrack =
+                isRunning || activeJobMatchesFormat
+                  ? trackStateById.get(entry.videoId)
+                  : undefined;
+              const singleJob = singleJobsByFormatKey[rowFormatKey];
               const singleTrack = singleJob?.tracks[0];
               const liveTrack = batchTrack ?? singleTrack;
-              const effectiveJobId = batchTrack ? activeJob?.jobId : singleJob?.jobId;
-              const isRowPending = pendingSingleIds.has(entry.videoId);
+              const isFromBatch = Boolean(batchTrack);
+              const effectiveJob = isFromBatch ? activeJob : singleJob;
+              const effectiveJobId = effectiveJob?.jobId;
+              const completedFormatBadge = effectiveJob
+                ? formatJobBadge(effectiveJob)
+                : currentFormatLabel;
+              const isRowPending = pendingSingleKeys.has(rowFormatKey);
 
               return (
                 <div
@@ -717,7 +791,7 @@ export function PlaylistSheet({
                             size="xs"
                             onClick={() =>
                               triggerBrowserDownload(
-                                batchTrack
+                                isFromBatch
                                   ? getTrackDownloadUrl(
                                       effectiveJobId,
                                       entry.videoId
@@ -725,10 +799,15 @@ export function PlaylistSheet({
                                   : getJobDownloadUrl(effectiveJobId)
                               )
                             }
-                            aria-label={`Download ${entry.title}`}
+                            aria-label={`Save ${entry.title} as ${completedFormatBadge}`}
+                            title={`Save ${completedFormatBadge} (${formatBytes(liveTrack.outputSizeBytes ?? 0)})`}
                           >
                             <CheckCircle2 className="size-3.5 text-status-ready" />
-                            <span className="hidden sm:inline">
+                            <span className="font-mono-tabular sm:hidden">
+                              {effectiveJob?.container.toUpperCase() ?? "SAVE"}
+                            </span>
+                            <span className="hidden font-mono-tabular sm:inline">
+                              {completedFormatBadge} ·{" "}
                               {formatBytes(liveTrack.outputSizeBytes ?? 0)}
                             </span>
                             <ArrowDownToLine className="size-3" />
@@ -742,7 +821,7 @@ export function PlaylistSheet({
                               <AlertCircle className="size-3.5" />
                               <span className="hidden sm:inline">Failed</span>
                             </span>
-                            {batchTrack ? (
+                            {isFromBatch ? (
                               <Button
                                 variant="outline"
                                 size="xs"
@@ -765,27 +844,66 @@ export function PlaylistSheet({
                             )}
                           </div>
                         ) : liveTrack.status === "muxing" ? (
-                          <span className="inline-flex items-center gap-1.5 font-mono-tabular text-[11px] text-status-warn">
-                            <Loader2 className="size-3.5 animate-spin" />
-                            <span>MUXING</span>
-                          </span>
-                        ) : liveTrack.status === "downloading" ? (
-                          <span className="inline-flex items-center gap-1.5 font-mono-tabular text-[11px] text-foreground">
-                            <Loader2 className="size-3.5 animate-spin text-signal-ink" />
-                            <span>
-                              {liveTrack.percent.toFixed(0)}%
-                              {liveTrack.speedBytes > 0
-                                ? ` · ${formatSpeed(liveTrack.speedBytes)}`
-                                : ""}
+                          <div className="flex items-center gap-1">
+                            <span className="inline-flex items-center gap-1.5 font-mono-tabular text-[11px] text-status-warn">
+                              <Loader2 className="size-3.5 animate-spin" />
+                              <span>MUXING</span>
                             </span>
-                          </span>
+                            {!isFromBatch && effectiveJobId && (
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                onClick={() => onCancelJob(effectiveJobId)}
+                                aria-label={`Cancel ${entry.title}`}
+                                title="Cancel download"
+                              >
+                                <X className="size-3.5" />
+                              </Button>
+                            )}
+                          </div>
+                        ) : liveTrack.status === "downloading" ? (
+                          <div className="flex items-center gap-1">
+                            <span className="inline-flex items-center gap-1.5 font-mono-tabular text-[11px] text-foreground">
+                              <Loader2 className="size-3.5 animate-spin text-signal-ink" />
+                              <span>
+                                {liveTrack.percent.toFixed(0)}%
+                                {liveTrack.speedBytes > 0
+                                  ? ` · ${formatSpeed(liveTrack.speedBytes)}`
+                                  : ""}
+                              </span>
+                            </span>
+                            {!isFromBatch && effectiveJobId && (
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                onClick={() => onCancelJob(effectiveJobId)}
+                                aria-label={`Cancel ${entry.title}`}
+                                title="Cancel download"
+                              >
+                                <X className="size-3.5" />
+                              </Button>
+                            )}
+                          </div>
                         ) : liveTrack.status === "cancelled" ? (
                           <Badge variant="outline">CANCELLED</Badge>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 font-mono-tabular text-[11px] text-ink-secondary">
-                            <Loader2 className="size-3.5 animate-spin" />
-                            <span>QUEUED</span>
-                          </span>
+                          <div className="flex items-center gap-1">
+                            <span className="inline-flex items-center gap-1.5 font-mono-tabular text-[11px] text-ink-secondary">
+                              <Loader2 className="size-3.5 animate-spin" />
+                              <span>QUEUED</span>
+                            </span>
+                            {!isFromBatch && effectiveJobId && (
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                onClick={() => onCancelJob(effectiveJobId)}
+                                aria-label={`Cancel ${entry.title}`}
+                                title="Cancel download"
+                              >
+                                <X className="size-3.5" />
+                              </Button>
+                            )}
+                          </div>
                         )}
                       </>
                     ) : entry.available ? (
@@ -794,8 +912,8 @@ export function PlaylistSheet({
                         size="icon-sm"
                         disabled={isRowPending}
                         onClick={() => void handleSingleQuickStash(entry)}
-                        aria-label={`Download only ${entry.title}`}
-                        title="Download this track individually"
+                        aria-label={`Download ${entry.title} as ${currentFormatLabel}`}
+                        title={`Download ${currentFormatLabel}`}
                       >
                         {isRowPending ? (
                           <Loader2 className="size-3.5 animate-spin text-signal-ink" />

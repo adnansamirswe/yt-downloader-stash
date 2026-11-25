@@ -26,6 +26,7 @@ interface IntakeBarProps {
   onUrlChange: (value: string) => void;
   defaultMediaType: MediaType;
   onDefaultMediaTypeChange: (mode: MediaType) => void;
+  showModeSwitch?: boolean;
   isInspecting: boolean;
   onInspect: (overrideUrl?: string) => void;
   onClear: () => void;
@@ -51,6 +52,7 @@ export function IntakeBar({
   onUrlChange,
   defaultMediaType,
   onDefaultMediaTypeChange,
+  showModeSwitch = true,
   isInspecting,
   onInspect,
   onClear,
@@ -201,11 +203,13 @@ export function IntakeBar({
         </div>
 
         <div className="flex items-center justify-between gap-2 sm:justify-end">
-          <ModeSwitch
-            value={defaultMediaType}
-            onChange={onDefaultMediaTypeChange}
-            layoutGroupId="intake-mode-pill"
-          />
+          {showModeSwitch && (
+            <ModeSwitch
+              value={defaultMediaType}
+              onChange={onDefaultMediaTypeChange}
+              layoutGroupId="intake-mode-pill"
+            />
+          )}
 
           <Button
             type="submit"

@@ -20,9 +20,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ModeSwitch } from "@/components/mode-switch";
 import { TelemetryRuler } from "@/components/telemetry-ruler";
 import {
+  buildFormatKey,
   formatBytes,
   formatDuration,
   formatETA,
+  formatJobBadge,
   formatSpeed,
   formatUploadDate,
   formatViews,
@@ -42,8 +44,10 @@ import type {
 
 interface SingleMediaDeckProps {
   inspect: InspectResponse;
-  initialMediaType: MediaType;
-  activeJob: JobSnapshot | null;
+  mediaType: MediaType;
+  onMediaTypeChange: (mode: MediaType) => void;
+  singleJobsByFormatKey: Record<string, JobSnapshot>;
+  runningVideoJob: JobSnapshot | null;
   isSubmitting: boolean;
   onStartDownload: (payload: StartSingleJobInput) => void;
   onCancelJob: (jobId: string) => void;
@@ -58,15 +62,16 @@ const VIDEO_CONTAINERS: Array<{ value: VideoContainer; label: string }> = [
 
 export function SingleMediaDeck({
   inspect,
-  initialMediaType,
-  activeJob,
+  mediaType,
+  onMediaTypeChange,
+  singleJobsByFormatKey,
+  runningVideoJob,
   isSubmitting,
   onStartDownload,
   onCancelJob,
   onLoadFullPlaylist,
 }: SingleMediaDeckProps) {
   const video = inspect.video;
-  const [mediaType, setMediaType] = useState<MediaType>(initialMediaType);
   const [selectedVideoPresetId, setSelectedVideoPresetId] = useState<string>(
     () => video?.videoPresets[0]?.id ?? ""
   );
@@ -90,11 +95,44 @@ export function SingleMediaDeck({
     video.audioPresets.find((p) => p.id === selectedAudioPresetId) ??
     video.audioPresets[0];
 
+  const currentContainer =
+    mediaType === "video"
+      ? videoContainer
+      : (activeAudioPreset?.container ?? "mp3");
+  const currentQuality =
+    mediaType === "video" ? (activeVideoPreset?.quality ?? "1080p") : undefined;
+  const currentAudioBitrate: AudioBitrate | undefined =
+    mediaType === "audio" && currentContainer === "mp3"
+      ? activeAudioPreset?.bitrateKbps === 192
+        ? "192k"
+        : activeAudioPreset?.bitrateKbps === 128
+          ? "128k"
+          : "320k"
+      : undefined;
+
+  const currentFormatKey = buildFormatKey({
+    videoId: video.videoId,
+    mediaType,
+    container: currentContainer,
+    quality: currentQuality,
+    audioBitrate: currentAudioBitrate,
+  });
+
+  // Match the job for the currently selected format; if another format of this video is actively downloading, show its telemetry bar.
+  const matchedFormatJob = singleJobsByFormatKey[currentFormatKey] ?? null;
+  const activeJob = matchedFormatJob ?? runningVideoJob;
+
   const isRunning =
     activeJob?.status === "queued" || activeJob?.status === "running";
-  const isCompleted = activeJob?.status === "completed";
-  const isFailed = activeJob?.status === "failed";
+  const isCompletedForSelection = matchedFormatJob?.status === "completed";
+  const isFailed = matchedFormatJob?.status === "failed";
   const track = activeJob?.tracks[0];
+  const currentFormatLabel = formatJobBadge({
+    mediaType,
+    container: currentContainer,
+    quality: currentQuality,
+    audioBitrate: currentAudioBitrate,
+  });
 
   function handleSelectVideoPreset(presetId: string) {
     setSelectedVideoPresetId(presetId);
@@ -196,8 +234,14 @@ export function SingleMediaDeck({
       {activeJob && (
         <div className="border-b border-border bg-muted/40 px-4 py-2.5">
           <TelemetryRuler
-            percent={isCompleted ? 100 : activeJob.overallPercent}
-            tone={isCompleted ? "ready" : isFailed ? "error" : "signal"}
+            percent={activeJob.status === "completed" ? 100 : activeJob.overallPercent}
+            tone={
+              activeJob.status === "completed"
+                ? "ready"
+                : activeJob.status === "failed"
+                  ? "error"
+                  : "signal"
+            }
             leftLabel={telemetryLeft}
             rightLabel={telemetryRight}
           />
@@ -263,7 +307,7 @@ export function SingleMediaDeck({
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
             <ModeSwitch
               value={mediaType}
-              onChange={setMediaType}
+              onChange={onMediaTypeChange}
               layoutGroupId="single-deck-mode"
             />
 
@@ -479,27 +523,30 @@ export function SingleMediaDeck({
                     <>
                       <ArrowDownToLine className="size-4 stroke-[1.75]" />
                       <span>
-                        {mediaType === "video"
-                          ? `Stash ${activeVideoPreset?.quality ?? "Video"} (${videoContainer.toUpperCase()})`
-                          : `Stash Audio (${(activeAudioPreset?.container ?? "m4a").toUpperCase()})`}
+                        {isCompletedForSelection
+                          ? `Re-stash ${currentFormatLabel}`
+                          : `Stash ${currentFormatLabel}`}
                       </span>
                     </>
                   )}
                 </Button>
               )}
 
-              {isCompleted && activeJob && (
+              {isCompletedForSelection && matchedFormatJob && (
                 <Button
                   variant="default"
                   size="lg"
                   onClick={() =>
-                    triggerBrowserDownload(getJobDownloadUrl(activeJob.jobId))
+                    triggerBrowserDownload(
+                      getJobDownloadUrl(matchedFormatJob.jobId)
+                    )
                   }
                   className="w-full sm:w-auto"
                 >
                   <ArrowDownToLine className="size-4 stroke-[1.75]" />
                   <span>
-                    Save File ({formatBytes(activeJob.outputSizeBytes ?? 0)})
+                    Save {currentFormatLabel} (
+                    {formatBytes(matchedFormatJob.outputSizeBytes ?? 0)})
                   </span>
                 </Button>
               )}
