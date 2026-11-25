@@ -26,6 +26,7 @@ type Config struct {
 	JSRuntime            string
 	PotProviderURL       string
 	CookiesFile          string
+	CookiesB64           string
 	ProxyURL             string
 	InspectRatePerMinute float64
 	JobRatePerMinute     float64
@@ -61,6 +62,7 @@ func Load() Config {
 		JSRuntime:            strings.TrimSpace(os.Getenv("STASH_JS_RUNTIME")),
 		PotProviderURL:       strings.TrimSpace(os.Getenv("STASH_POT_PROVIDER_URL")),
 		CookiesFile:          strings.TrimSpace(os.Getenv("STASH_COOKIES_FILE")),
+		CookiesB64:           strings.TrimSpace(os.Getenv("STASH_COOKIES_B64")),
 		ProxyURL:             strings.TrimSpace(os.Getenv("STASH_PROXY_URL")),
 		InspectRatePerMinute: float64(getEnvInt("STASH_INSPECT_RPM", 60, 5, 600)),
 		JobRatePerMinute:     float64(getEnvInt("STASH_JOB_RPM", 30, 2, 300)),

@@ -55,6 +55,7 @@ services:
       STASH_ALLOWED_ORIGINS: "${STASH_ALLOWED_ORIGINS:-http://localhost:8080,http://localhost:3000}"
       # Optional: configure if your VPS datacenter IP requires authenticated cookies or a proxy
       STASH_COOKIES_FILE: "${STASH_COOKIES_FILE:-}"
+      STASH_COOKIES_B64: "${STASH_COOKIES_B64:-}"
       STASH_PROXY_URL: "${STASH_PROXY_URL:-}"
     volumes:
       - stash_temp:/tmp/stash-jobs

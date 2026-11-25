@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+*cookies*.txt
 *.test
 tmp/
 dist/

@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -22,6 +24,20 @@ func main() {
 	}))
 
 	cfg := config.Load()
+
+	if cfg.CookiesFile == "" && cfg.CookiesB64 != "" {
+		decoded, err := base64.StdEncoding.DecodeString(cfg.CookiesB64)
+		if err != nil {
+			logger.Error("cookies_b64_decode_failed", "error", err)
+		} else {
+			cookiePath := filepath.Join(os.TempDir(), "stash-cookies.txt")
+			if err := os.WriteFile(cookiePath, decoded, 0o600); err != nil {
+				logger.Error("cookies_write_failed", "error", err)
+			} else {
+				cfg.CookiesFile = cookiePath
+			}
+		}
+	}
 
 	rootCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stopSignals()
