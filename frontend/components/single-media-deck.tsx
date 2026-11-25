@@ -75,9 +75,10 @@ export function SingleMediaDeck({
     if (first === "mkv" || first === "webm" || first === "mp4") return first;
     return "mp4";
   });
-  const [selectedAudioPresetId, setSelectedAudioPresetId] = useState<string>(
-    () => video?.audioPresets[0]?.id ?? "audio-m4a"
-  );
+  const [selectedAudioPresetId, setSelectedAudioPresetId] = useState<string>(() => {
+    const mp3High = video?.audioPresets.find((p) => p.id === "audio-mp3-320");
+    return mp3High?.id ?? video?.audioPresets[0]?.id ?? "audio-mp3-320";
+  });
   const [embedMetadata, setEmbedMetadata] = useState<boolean>(true);
 
   if (!video) return null;

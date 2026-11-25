@@ -188,9 +188,51 @@ export function subscribeToJobEvents(
   onEvent: (event: ProgressEvent) => void,
   onConnectionError?: () => void
 ): () => void {
+  let closed = false;
+  let pollTimer: number | null = null;
   const es = new EventSource(
     apiUrl(`/api/v1/jobs/${encodeURIComponent(jobId)}/events`)
   );
+
+  const stopAll = () => {
+    closed = true;
+    es.close();
+    if (pollTimer !== null) {
+      window.clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  };
+
+  const startPollingFallback = () => {
+    if (closed || pollTimer !== null) return;
+    const pollOnce = async () => {
+      if (closed) return;
+      try {
+        const snap = await fetchJobSnapshot(jobId);
+        if (closed) return;
+        const terminal =
+          snap.status === "completed" ||
+          snap.status === "failed" ||
+          snap.status === "cancelled" ||
+          snap.status === "partial";
+        onEvent({ type: terminal ? "done" : "update", job: snap });
+        if (
+          snap.status === "completed" ||
+          snap.status === "failed" ||
+          snap.status === "cancelled"
+        ) {
+          stopAll();
+        }
+      } catch (err) {
+        if (err instanceof StashApiError && err.status === 404) {
+          stopAll();
+          onConnectionError?.();
+        }
+      }
+    };
+    void pollOnce();
+    pollTimer = window.setInterval(() => void pollOnce(), 1500);
+  };
 
   const handleMessage = (ev: Event) => {
     if (!(ev instanceof MessageEvent) || typeof ev.data !== "string") {
@@ -206,7 +248,7 @@ export function subscribeToJobEvents(
           (parsed.data.job.status === "completed" ||
             parsed.data.job.status === "cancelled")
         ) {
-          es.close();
+          stopAll();
         }
       }
     } catch {
@@ -219,12 +261,11 @@ export function subscribeToJobEvents(
   es.addEventListener("done", handleMessage);
 
   es.onerror = () => {
-    if (es.readyState === EventSource.CLOSED) {
-      onConnectionError?.();
+    es.close();
+    if (!closed) {
+      startPollingFallback();
     }
   };
 
-  return () => {
-    es.close();
-  };
+  return stopAll;
 }

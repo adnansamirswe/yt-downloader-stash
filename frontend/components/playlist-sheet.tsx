@@ -57,9 +57,10 @@ interface PlaylistSheetProps {
   initialMediaType: MediaType;
   maxConcurrency: number;
   activeJob: JobSnapshot | null;
+  singleJobsByVideoId: Record<string, JobSnapshot>;
   isSubmitting: boolean;
   onStartPlaylistJob: (payload: StartPlaylistJobInput) => void;
-  onStartSingleTrack: (payload: StartSingleJobInput) => void;
+  onStartSingleTrack: (payload: StartSingleJobInput) => Promise<void> | void;
   onCancelJob: (jobId: string) => void;
   onRetryTrack: (jobId: string, videoId: string) => void;
 }
@@ -93,6 +94,7 @@ export function PlaylistSheet({
   initialMediaType,
   maxConcurrency,
   activeJob,
+  singleJobsByVideoId,
   isSubmitting,
   onStartPlaylistJob,
   onStartSingleTrack,
@@ -112,7 +114,8 @@ export function PlaylistSheet({
   const [mediaType, setMediaType] = useState<MediaType>(initialMediaType);
   const [videoQuality, setVideoQuality] = useState("1080p");
   const [videoContainer, setVideoContainer] = useState<VideoContainer>("mp4");
-  const [audioPresetKey, setAudioPresetKey] = useState("m4a");
+  const [audioPresetKey, setAudioPresetKey] = useState("mp3-320k");
+  const [pendingSingleIds, setPendingSingleIds] = useState<Set<string>>(() => new Set());
   const [concurrency, setConcurrency] = useState(() =>
     Math.min(Math.max(1, maxConcurrency), 4)
   );
@@ -252,17 +255,30 @@ export function PlaylistSheet({
     });
   }
 
-  function handleSingleQuickStash(entry: PlaylistEntry) {
+  async function handleSingleQuickStash(entry: PlaylistEntry) {
     const audioFmt = resolveSelectedAudioFormat();
-    onStartSingleTrack({
-      url: `https://www.youtube.com/watch?v=${entry.videoId}`,
-      title: entry.title,
-      mediaType,
-      quality: mediaType === "video" ? videoQuality : undefined,
-      container: mediaType === "video" ? videoContainer : audioFmt.container,
-      audioBitrate: mediaType === "audio" ? audioFmt.audioBitrate : undefined,
-      embedMetadata,
+    setPendingSingleIds((prev) => {
+      const next = new Set(prev);
+      next.add(entry.videoId);
+      return next;
     });
+    try {
+      await onStartSingleTrack({
+        url: `https://www.youtube.com/watch?v=${entry.videoId}`,
+        title: entry.title,
+        mediaType,
+        quality: mediaType === "video" ? videoQuality : undefined,
+        container: mediaType === "video" ? videoContainer : audioFmt.container,
+        audioBitrate: mediaType === "audio" ? audioFmt.audioBitrate : undefined,
+        embedMetadata,
+      });
+    } finally {
+      setPendingSingleIds((prev) => {
+        const next = new Set(prev);
+        next.delete(entry.videoId);
+        return next;
+      });
+    }
   }
 
   const concurrencyChoices = Array.from(
@@ -604,7 +620,12 @@ export function PlaylistSheet({
               if (!entry) return null;
 
               const isSelected = selectedIds.has(entry.videoId);
-              const liveTrack = trackStateById.get(entry.videoId);
+              const batchTrack = trackStateById.get(entry.videoId);
+              const singleJob = singleJobsByVideoId[entry.videoId];
+              const singleTrack = singleJob?.tracks[0];
+              const liveTrack = batchTrack ?? singleTrack;
+              const effectiveJobId = batchTrack ? activeJob?.jobId : singleJob?.jobId;
+              const isRowPending = pendingSingleIds.has(entry.videoId);
 
               return (
                 <div
@@ -690,16 +711,18 @@ export function PlaylistSheet({
                   <div className="flex shrink-0 items-center gap-2">
                     {liveTrack ? (
                       <>
-                        {liveTrack.status === "completed" && activeJob ? (
+                        {liveTrack.status === "completed" && effectiveJobId ? (
                           <Button
                             variant="outline"
                             size="xs"
                             onClick={() =>
                               triggerBrowserDownload(
-                                getTrackDownloadUrl(
-                                  activeJob.jobId,
-                                  entry.videoId
-                                )
+                                batchTrack
+                                  ? getTrackDownloadUrl(
+                                      effectiveJobId,
+                                      entry.videoId
+                                    )
+                                  : getJobDownloadUrl(effectiveJobId)
                               )
                             }
                             aria-label={`Download ${entry.title}`}
@@ -710,7 +733,7 @@ export function PlaylistSheet({
                             </span>
                             <ArrowDownToLine className="size-3" />
                           </Button>
-                        ) : liveTrack.status === "failed" && activeJob ? (
+                        ) : liveTrack.status === "failed" && effectiveJobId ? (
                           <div className="flex items-center gap-1.5">
                             <span
                               title={liveTrack.error}
@@ -719,41 +742,66 @@ export function PlaylistSheet({
                               <AlertCircle className="size-3.5" />
                               <span className="hidden sm:inline">Failed</span>
                             </span>
-                            <Button
-                              variant="outline"
-                              size="xs"
-                              onClick={() =>
-                                onRetryTrack(activeJob.jobId, entry.videoId)
-                              }
-                            >
-                              <RotateCcw className="size-3" />
-                              <span>Retry</span>
-                            </Button>
+                            {batchTrack ? (
+                              <Button
+                                variant="outline"
+                                size="xs"
+                                onClick={() =>
+                                  onRetryTrack(effectiveJobId, entry.videoId)
+                                }
+                              >
+                                <RotateCcw className="size-3" />
+                                <span>Retry</span>
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                size="xs"
+                                onClick={() => void handleSingleQuickStash(entry)}
+                              >
+                                <RotateCcw className="size-3" />
+                                <span>Retry</span>
+                              </Button>
+                            )}
                           </div>
                         ) : liveTrack.status === "muxing" ? (
-                          <Badge variant="warn">MUXING</Badge>
+                          <span className="inline-flex items-center gap-1.5 font-mono-tabular text-[11px] text-status-warn">
+                            <Loader2 className="size-3.5 animate-spin" />
+                            <span>MUXING</span>
+                          </span>
                         ) : liveTrack.status === "downloading" ? (
-                          <span className="font-mono-tabular text-[11px] text-foreground">
-                            {liveTrack.percent.toFixed(0)}%
-                            {liveTrack.speedBytes > 0
-                              ? ` · ${formatSpeed(liveTrack.speedBytes)}`
-                              : ""}
+                          <span className="inline-flex items-center gap-1.5 font-mono-tabular text-[11px] text-foreground">
+                            <Loader2 className="size-3.5 animate-spin text-signal-ink" />
+                            <span>
+                              {liveTrack.percent.toFixed(0)}%
+                              {liveTrack.speedBytes > 0
+                                ? ` · ${formatSpeed(liveTrack.speedBytes)}`
+                                : ""}
+                            </span>
                           </span>
                         ) : liveTrack.status === "cancelled" ? (
                           <Badge variant="outline">CANCELLED</Badge>
                         ) : (
-                          <Badge variant="secondary">QUEUED</Badge>
+                          <span className="inline-flex items-center gap-1.5 font-mono-tabular text-[11px] text-ink-secondary">
+                            <Loader2 className="size-3.5 animate-spin" />
+                            <span>QUEUED</span>
+                          </span>
                         )}
                       </>
                     ) : entry.available ? (
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        onClick={() => handleSingleQuickStash(entry)}
+                        disabled={isRowPending}
+                        onClick={() => void handleSingleQuickStash(entry)}
                         aria-label={`Download only ${entry.title}`}
                         title="Download this track individually"
                       >
-                        <ArrowDownToLine className="size-3.5 stroke-[1.6]" />
+                        {isRowPending ? (
+                          <Loader2 className="size-3.5 animate-spin text-signal-ink" />
+                        ) : (
+                          <ArrowDownToLine className="size-3.5 stroke-[1.6]" />
+                        )}
                       </Button>
                     ) : null}
                   </div>

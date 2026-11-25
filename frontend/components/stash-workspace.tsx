@@ -301,6 +301,19 @@ export function StashWorkspace() {
 
   const stageJob = stageJobId ? (jobsById[stageJobId] ?? null) : null;
 
+  const singleJobsByVideoId = useMemo(() => {
+    const map: Record<string, JobSnapshot> = {};
+    for (const job of orderedJobs) {
+      if (job.kind === "single" && job.tracks[0]?.videoId) {
+        const vid = job.tracks[0].videoId;
+        if (!map[vid]) {
+          map[vid] = job;
+        }
+      }
+    }
+    return map;
+  }, [orderedJobs]);
+
   const intakeTelemetry = useMemo(() => {
     const running = activeTransfers[0];
     if (!running) return null;
@@ -412,10 +425,11 @@ export function StashWorkspace() {
               initialMediaType={defaultMediaType}
               maxConcurrency={health?.maxConcurrentTracks ?? 4}
               activeJob={stageJob}
+              singleJobsByVideoId={singleJobsByVideoId}
               isSubmitting={isStartingJob}
               onStartPlaylistJob={(payload) => void handleStartPlaylist(payload)}
               onStartSingleTrack={(payload) =>
-                void handleStartSingle(payload, false)
+                handleStartSingle(payload, false)
               }
               onCancelJob={(id) => void handleCancelJob(id)}
               onRetryTrack={(jobId, vid) => void handleRetryTrack(jobId, vid)}

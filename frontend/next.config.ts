@@ -1,18 +1,25 @@
 import type { NextConfig } from "next";
 
 const apiOrigin = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/+$/, "") ?? "";
-const connectSources = ["'self'", "http://localhost:4000", "http://127.0.0.1:4000"];
+const connectSources = [
+  "'self'",
+  "http://localhost:4000",
+  "http://127.0.0.1:4000",
+  "https://cloudflareinsights.com",
+  "https://static.cloudflareinsights.com",
+];
 if (apiOrigin && !connectSources.includes(apiOrigin)) {
   connectSources.push(apiOrigin);
 }
 
 const cspDirectives = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com https://challenges.cloudflare.com",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https://i.ytimg.com https://i9.ytimg.com https://yt3.ggpht.com https://yt3.googleusercontent.com",
   "font-src 'self' data:",
   `connect-src ${connectSources.join(" ")}`,
+  "frame-src https://challenges.cloudflare.com",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
