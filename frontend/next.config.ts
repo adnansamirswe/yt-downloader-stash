@@ -22,6 +22,8 @@ const nextConfig: NextConfig = {
   output: "standalone",
   experimental: {
     agentFeedback: true,
+    cpus: 1,
+    staticGenerationMaxConcurrency: 1,
   },
   cacheComponents: true,
   partialPrefetching: true,

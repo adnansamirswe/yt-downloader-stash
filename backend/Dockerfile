@@ -2,14 +2,14 @@
 
 FROM docker.io/denoland/deno:bin AS deno
 
-FROM docker.io/library/golang:1.26-bookworm AS builder
+FROM docker.io/library/golang:1.26-alpine AS builder
 WORKDIR /src
 
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/stash-api ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -p 2 -trimpath -ldflags="-s -w" -o /out/stash-api ./cmd/server
 
 FROM docker.io/library/debian:bookworm-slim AS runtime
 
@@ -44,11 +44,12 @@ WORKDIR /home/stash
 ENV STASH_PORT=4000 \
     STASH_TEMP_DIR=/tmp/stash-jobs \
     STASH_JS_RUNTIME=deno:/usr/local/bin/deno \
-    STASH_TRUST_PROXY=true
+    STASH_TRUST_PROXY=true \
+    GOMEMLIMIT=256MiB
 
 EXPOSE 4000
 
-HEALTHCHECK --interval=20s --timeout=5s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=25s --retries=5 \
     CMD curl -fsS http://127.0.0.1:4000/api/v1/health || exit 1
 
 ENTRYPOINT ["/usr/local/bin/stash-api"]

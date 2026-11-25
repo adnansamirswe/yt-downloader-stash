@@ -11,10 +11,12 @@ services:
     expose:
       - "8080"
     depends_on:
-      frontend:
-        condition: service_healthy
-      backend:
-        condition: service_healthy
+      - frontend
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 128M
 
   frontend:
     build:
@@ -26,6 +28,10 @@ services:
     restart: unless-stopped
     expose:
       - "3000"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
   backend:
     build:
@@ -40,10 +46,10 @@ services:
       STASH_PORT: "4000"
       STASH_TRUST_PROXY: "true"
       STASH_TEMP_DIR: "/tmp/stash-jobs"
-      STASH_MAX_CONCURRENT_JOBS: "${STASH_MAX_CONCURRENT_JOBS:-4}"
-      STASH_MAX_CONCURRENT_TRACKS: "${STASH_MAX_CONCURRENT_TRACKS:-4}"
-      STASH_FRAGMENTS_SINGLE: "${STASH_FRAGMENTS_SINGLE:-8}"
-      STASH_FRAGMENTS_PLAYLIST: "${STASH_FRAGMENTS_PLAYLIST:-4}"
+      STASH_MAX_CONCURRENT_JOBS: "${STASH_MAX_CONCURRENT_JOBS:-2}"
+      STASH_MAX_CONCURRENT_TRACKS: "${STASH_MAX_CONCURRENT_TRACKS:-2}"
+      STASH_FRAGMENTS_SINGLE: "${STASH_FRAGMENTS_SINGLE:-4}"
+      STASH_FRAGMENTS_PLAYLIST: "${STASH_FRAGMENTS_PLAYLIST:-2}"
       STASH_JOB_TTL_MINUTES: "${STASH_JOB_TTL_MINUTES:-30}"
       STASH_POT_PROVIDER_URL: "http://pot-provider:4416"
       STASH_ALLOWED_ORIGINS: "${STASH_ALLOWED_ORIGINS:-http://localhost:8080,http://localhost:3000}"
@@ -54,6 +60,10 @@ services:
       - stash_temp:/tmp/stash-jobs
       # Optional read-only mount for YouTube cookies in Dokploy (create file in Dokploy Mounts tab):
       # - ./cookies.txt:/data/cookies.txt:ro
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
 
   pot-provider:
     image: docker.io/brainicism/bgutil-ytdlp-pot-provider:latest
@@ -61,6 +71,10 @@ services:
     restart: unless-stopped
     expose:
       - "4416"
+    deploy:
+      resources:
+        limits:
+          memory: 384M
 
 volumes:
   stash_temp:
