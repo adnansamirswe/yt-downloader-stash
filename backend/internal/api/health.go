@@ -26,6 +26,8 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		JSRuntime:           s.tooling.JSRuntimeName,
 		PotProviderEnabled:  potEnabled,
 		PotProviderHealthy:  potHealthy,
+		CookiesConfigured:   s.tooling.HasCookies(),
+		CookiesStatus:       s.tooling.CookiesStatus,
 		MaxConcurrentTracks: s.cfg.MaxConcurrentTracks,
 		ActiveJobs:          s.jobs.ActiveJobCount(),
 	})

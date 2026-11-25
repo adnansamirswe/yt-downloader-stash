@@ -110,6 +110,8 @@ type HealthResponse struct {
 	JSRuntime           string `json:"jsRuntime"`
 	PotProviderEnabled  bool   `json:"potProviderEnabled"`
 	PotProviderHealthy  bool   `json:"potProviderHealthy"`
+	CookiesConfigured   bool   `json:"cookiesConfigured"`
+	CookiesStatus       string `json:"cookiesStatus"`
 	MaxConcurrentTracks int    `json:"maxConcurrentTracks"`
 	ActiveJobs          int    `json:"activeJobs"`
 }

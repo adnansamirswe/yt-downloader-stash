@@ -27,22 +27,30 @@ func main() {
 
 	cfg := config.Load()
 
-	if cfg.CookiesFile == "" && cfg.CookiesB64 != "" {
-		cleanB64 := strings.Map(func(r rune) rune {
-			if unicode.IsSpace(r) {
-				return -1
-			}
-			return r
-		}, cfg.CookiesB64)
-		decoded, err := base64.StdEncoding.DecodeString(cleanB64)
+	cookiesStatus := "not_set"
+	hasFile := false
+	if cfg.CookiesFile != "" {
+		if st, err := os.Stat(cfg.CookiesFile); err == nil && !st.IsDir() && st.Size() > 0 {
+			hasFile = true
+			cookiesStatus = "file_ok"
+		} else {
+			cookiesStatus = "file_missing"
+		}
+	}
+
+	if !hasFile && cfg.CookiesB64 != "" {
+		decoded, err := decodeCookiesEnv(cfg.CookiesB64)
 		if err != nil {
+			cookiesStatus = "b64_decode_error"
 			logger.Error("cookies_b64_decode_failed", "error", err)
 		} else {
-			cookiePath := filepath.Join(os.TempDir(), "stash-cookies.txt")
+			cookiePath := filepath.Join(os.TempDir(), "stash-cookies-master.txt")
 			if err := os.WriteFile(cookiePath, decoded, 0o600); err != nil {
+				cookiesStatus = "write_error"
 				logger.Error("cookies_write_failed", "error", err)
 			} else {
 				cfg.CookiesFile = cookiePath
+				cookiesStatus = "b64_ok"
 			}
 		}
 	}
@@ -51,12 +59,14 @@ func main() {
 	defer stopSignals()
 
 	tooling := engine.DetectTooling(rootCtx, cfg)
+	tooling.CookiesStatus = cookiesStatus
 	logger.Info("stash_backend_tooling",
 		"yt_dlp_version", tooling.YtDlpVersion,
 		"ffmpeg_available", tooling.FFmpegPath != "",
 		"js_runtime", tooling.JSRuntimeName,
 		"pot_provider_enabled", tooling.PotURL != "",
-		"cookies_configured", tooling.CookiesFile != "",
+		"cookies_configured", tooling.HasCookies(),
+		"cookies_status", tooling.CookiesStatus,
 	)
 
 	inspector := engine.NewInspector(tooling, cfg.CacheTTL, logger)
@@ -96,4 +106,37 @@ func main() {
 			logger.Error("http_shutdown_error", "error", err)
 		}
 	}
+}
+
+func decodeCookiesEnv(raw string) ([]byte, error) {
+	trimmed := strings.TrimSpace(raw)
+	// Strip accidental surrounding quotes from .env copy-paste
+	if len(trimmed) >= 2 && ((trimmed[0] == '"' && trimmed[len(trimmed)-1] == '"') || (trimmed[0] == '\'' && trimmed[len(trimmed)-1] == '\'')) {
+		trimmed = strings.TrimSpace(trimmed[1 : len(trimmed)-1])
+	}
+	clean := strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, trimmed)
+
+	encodings := []*base64.Encoding{
+		base64.StdEncoding,
+		base64.RawStdEncoding,
+		base64.URLEncoding,
+		base64.RawURLEncoding,
+	}
+	var lastErr error
+	for _, enc := range encodings {
+		if b, err := enc.DecodeString(clean); err == nil && len(b) > 0 {
+			return b, nil
+		} else if err != nil {
+			lastErr = err
+		}
+	}
+	if lastErr == nil {
+		lastErr = errors.New("empty cookies payload")
+	}
+	return nil, lastErr
 }

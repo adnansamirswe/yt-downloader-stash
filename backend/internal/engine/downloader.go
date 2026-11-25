@@ -51,7 +51,9 @@ func DownloadTrack(ctx context.Context, tooling *Tooling, opts DownloadOptions, 
 	}
 
 	outTemplate := filepath.Join(opts.TrackDir, "media.%(ext)s")
-	args := buildDownloadArgs(tooling, opts, outTemplate)
+	baseArgs, cleanupCookies := tooling.PrepareYtDlpArgs()
+	defer cleanupCookies()
+	args := buildDownloadArgs(baseArgs, opts, outTemplate)
 
 	cmd := NewGroupCommand(ctx, tooling.YtDlpPath, args...)
 	stdoutPipe, err := cmd.StdoutPipe()
@@ -95,7 +97,12 @@ func DownloadTrack(ctx context.Context, tooling *Tooling, opts DownloadOptions, 
 			return nil, ctx.Err()
 		}
 		stderrStr := stderrBuf.String()
-		logger.Warn("track_download_failed", "url", opts.VideoURL, "stderr", truncateString(stderrStr, 800))
+		logger.Warn("track_download_failed",
+			"url", opts.VideoURL,
+			"cookies_configured", tooling.HasCookies(),
+			"cookies_status", tooling.CookiesStatus,
+			"stderr", truncateString(stderrStr, 800),
+		)
 		return nil, errors.New(classifyYtDlpError(stderrStr))
 	}
 
@@ -131,13 +138,13 @@ func DownloadTrack(ctx context.Context, tooling *Tooling, opts DownloadOptions, 
 	}, nil
 }
 
-func buildDownloadArgs(tooling *Tooling, opts DownloadOptions, outTemplate string) []string {
+func buildDownloadArgs(baseArgs []string, opts DownloadOptions, outTemplate string) []string {
 	frags := opts.Fragments
 	if frags < 1 {
 		frags = 4
 	}
 
-	args := append(tooling.BaseYtDlpArgs(),
+	args := append(baseArgs,
 		"--no-playlist",
 		"--newline",
 		"--concurrent-fragments", strconv.Itoa(frags),

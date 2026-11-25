@@ -25,6 +25,7 @@ type Tooling struct {
 	JSRuntimeName string // e.g. "deno", "node", "none"
 	PotURL        string
 	CookiesFile   string
+	CookiesStatus string
 	ProxyURL      string
 
 	potMu        sync.Mutex
@@ -35,9 +36,17 @@ type Tooling struct {
 // DetectTooling resolves yt-dlp, ffmpeg, and JS runtime binaries once at startup.
 func DetectTooling(ctx context.Context, cfg config.Config) *Tooling {
 	t := &Tooling{
-		PotURL:      cfg.PotProviderURL,
-		CookiesFile: cfg.CookiesFile,
-		ProxyURL:    cfg.ProxyURL,
+		PotURL:        cfg.PotProviderURL,
+		CookiesFile:   cfg.CookiesFile,
+		CookiesStatus: "not_set",
+		ProxyURL:      cfg.ProxyURL,
+	}
+	if t.CookiesFile != "" {
+		if st, err := os.Stat(t.CookiesFile); err == nil && !st.IsDir() && st.Size() > 0 {
+			t.CookiesStatus = "ok"
+		} else {
+			t.CookiesStatus = "file_missing"
+		}
 	}
 
 	t.YtDlpPath = resolveBinary(cfg.YtDlpBin, "yt-dlp", true)
@@ -62,9 +71,20 @@ func DetectTooling(ctx context.Context, cfg config.Config) *Tooling {
 	return t
 }
 
-// BaseYtDlpArgs constructs safe baseline arguments shared by inspect and download commands.
-func (t *Tooling) BaseYtDlpArgs() []string {
-	args := []string{
+// HasCookies returns true when a readable, non-empty cookie file is active.
+func (t *Tooling) HasCookies() bool {
+	if t.CookiesFile == "" {
+		return false
+	}
+	st, err := os.Stat(t.CookiesFile)
+	return err == nil && !st.IsDir() && st.Size() > 0
+}
+
+// PrepareYtDlpArgs constructs safe baseline arguments with an isolated per-invocation copy
+// of the cookie jar so concurrent yt-dlp processes never overwrite or corrupt the master file.
+func (t *Tooling) PrepareYtDlpArgs() (args []string, cleanup func()) {
+	cleanup = func() {}
+	args = []string{
 		"--ignore-config",
 		"--no-warnings",
 		"--no-color",
@@ -79,19 +99,30 @@ func (t *Tooling) BaseYtDlpArgs() []string {
 	if t.PotURL != "" {
 		args = append(args,
 			"--extractor-args", "youtubepot-bgutilhttp:base_url="+t.PotURL,
-			"--extractor-args", "youtube:player-client=mweb,web_safari,tv",
+			"--extractor-args", "youtube:player-client=default,mweb",
 		)
 	}
-	if t.CookiesFile != "" {
-		if st, err := os.Stat(t.CookiesFile); err == nil && !st.IsDir() {
-			args = append(args, "--cookies", t.CookiesFile)
+	if t.HasCookies() {
+		if raw, err := os.ReadFile(t.CookiesFile); err == nil && len(raw) > 0 {
+			if tmp, err := os.CreateTemp("", "stash-cj-*.txt"); err == nil {
+				tmpPath := tmp.Name()
+				_, writeErr := tmp.Write(raw)
+				closeErr := tmp.Close()
+				if writeErr == nil && closeErr == nil {
+					_ = os.Chmod(tmpPath, 0o600)
+					args = append(args, "--cookies", tmpPath)
+					cleanup = func() { _ = os.Remove(tmpPath) }
+				} else {
+					_ = os.Remove(tmpPath)
+				}
+			}
 		}
 	}
 	if t.ProxyURL != "" {
 		args = append(args, "--proxy", t.ProxyURL)
 	}
 
-	return args
+	return args, cleanup
 }
 
 // CheckPotProvider verifies whether the configured PO-token sidecar responds over HTTP (cached for 15s).

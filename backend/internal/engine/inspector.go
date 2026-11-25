@@ -124,7 +124,10 @@ func (ins *Inspector) inspectVideo(ctx context.Context, validated *security.Vali
 	inspectCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 
-	args := append(ins.tooling.BaseYtDlpArgs(),
+	baseArgs, cleanup := ins.tooling.PrepareYtDlpArgs()
+	defer cleanup()
+
+	args := append(baseArgs,
 		"--dump-single-json",
 		"--no-playlist",
 		"--skip-download",
@@ -134,7 +137,12 @@ func (ins *Inspector) inspectVideo(ctx context.Context, validated *security.Vali
 
 	stdout, stderr, err := ins.runYtDlp(inspectCtx, args)
 	if err != nil {
-		ins.logger.Warn("video_inspect_failed", "video_id", validated.VideoID, "stderr", truncateString(stderr, 600))
+		ins.logger.Warn("video_inspect_failed",
+			"video_id", validated.VideoID,
+			"cookies_configured", ins.tooling.HasCookies(),
+			"cookies_status", ins.tooling.CookiesStatus,
+			"stderr", truncateString(stderr, 600),
+		)
 		return nil, errors.New(classifyYtDlpError(stderr))
 	}
 
@@ -210,7 +218,10 @@ func (ins *Inspector) inspectPlaylist(ctx context.Context, validated *security.V
 	inspectCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 
-	args := append(ins.tooling.BaseYtDlpArgs(),
+	baseArgs, cleanup := ins.tooling.PrepareYtDlpArgs()
+	defer cleanup()
+
+	args := append(baseArgs,
 		"--flat-playlist",
 		"--yes-playlist",
 		"--dump-single-json",
@@ -221,7 +232,12 @@ func (ins *Inspector) inspectPlaylist(ctx context.Context, validated *security.V
 
 	stdout, stderr, err := ins.runYtDlp(inspectCtx, args)
 	if err != nil {
-		ins.logger.Warn("playlist_inspect_failed", "playlist_id", validated.PlaylistID, "stderr", truncateString(stderr, 600))
+		ins.logger.Warn("playlist_inspect_failed",
+			"playlist_id", validated.PlaylistID,
+			"cookies_configured", ins.tooling.HasCookies(),
+			"cookies_status", ins.tooling.CookiesStatus,
+			"stderr", truncateString(stderr, 600),
+		)
 		return nil, errors.New(classifyYtDlpError(stderr))
 	}
 
